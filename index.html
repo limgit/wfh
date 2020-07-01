@@ -128,6 +128,8 @@
         // Result display
         const tableBody = document.getElementById('result-data');
         tableBody.innerHTML = `<tr>${result.map((names) => `<td>${names.join('<br>')}</td>`).join('')}</tr>`;
+        // Clear error msg on successful run
+        document.getElementById('error-msg').innerHTML = '';
       }
     </script>
   </body>
