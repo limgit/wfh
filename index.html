@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Dice Dice Dice</title>
+    <style>
+      .flex {
+        display: flex;
+      }
+      .padded {
+        padding: 4px;
+      }
+      table {
+        border: 1px solid black;
+        border-collapse: collapse;
+      }
+      th, td {
+        border: 1px solid black;
+        padding: 8px;
+      }
+      #error-msg {
+        color: red;
+        font-weight: bold;
+      }
+    </style>
+  </head>
+  <body onload="onLoad();">
+    <div class="flex">
+      <div class="padded">
+        이름 목록(엔터로 구분): <br>
+        <textarea id="name-list" cols="25" rows="20" onchange="onNameListChange();"></textarea>
+      </div>
+      <div class="padded">
+        <div class="padded">
+          주 <input id="count" type="number" min="0" max="5" value="1">회 재택
+        </div>
+        <div class="padded">
+          재택 대상 날짜:
+          <label><input type="checkbox" name="weekday" value="mon" checked> 월</label>
+          <label><input type="checkbox" name="weekday" value="tue" checked> 화</label>
+          <label><input type="checkbox" name="weekday" value="wed" checked> 수</label>
+          <label><input type="checkbox" name="weekday" value="thu" checked> 목</label>
+          <label><input type="checkbox" name="weekday" value="fri" checked> 금</label>
+        </div>
+        <div class="padded">
+          <button onclick="onRunClick();">Run!</button>
+        </div>
+        <div class="padded">
+          <p id="error-msg"></p>
+        </div>
+      </div>
+      <!--Result section-->
+      <div class="padded">
+        결과
+        <table>
+          <thead>
+            <tr>
+              <th>월</th>
+              <th>화</th>
+              <th>수</th>
+              <th>목</th>
+              <th>금</th>
+            </tr>
+          </thead>
+          <tbody id="result-data">
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <script>
+      const NAME_LIST_KEY = 'nameList';
+      const STORAGE = window.localStorage;
+
+      function onLoad() {
+        document.getElementById('name-list').value = STORAGE.getItem(NAME_LIST_KEY);
+      }
+
+      function onNameListChange() {
+        STORAGE.setItem(NAME_LIST_KEY, document.getElementById('name-list').value);
+      }
+
+      // Shuffle array in-place
+      function shuffle(a) {
+        for (let i = a.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [a[i], a[j]] = [a[j], a[i]];
+        }
+        return a;
+      }
+
+      function onRunClick() {
+        // Read data
+        const nameList = document.getElementById('name-list').value.split('\n').filter((item) => item !== "");
+        const count = Number(document.getElementById('count').value);
+        const weekDaysAvail = Array.from(document.getElementsByName('weekday')).map((e) => e.checked);
+        const possibleWeekdays = weekDaysAvail.map((v, idx) => v ? idx : null).filter((i) => i !== null);
+        const weekDaysAvailCount = possibleWeekdays.length;
+        if (count > weekDaysAvailCount) {
+          document.getElementById('error-msg').innerHTML = '가능한 요일 수보다 재택 날짜 수가 많습니다.';
+          return;
+        }
+
+        // Calculate random assignment as uniform as possible
+        let result = [[], [], [], [], []];
+        const singleDaySlots = Math.floor((nameList.length * count) / weekDaysAvailCount);
+        const remainder = nameList.length * count - weekDaysAvailCount * singleDaySlots;
+        // Generate list of random weekdays
+        const randomAssign = new Array(singleDaySlots + (remainder > 0 ? 1 : 0)).fill(null).reduce((acc) => {
+          return [...acc, ...shuffle([...possibleWeekdays])];
+        }, []);
+
+        shuffle(nameList);
+        for (let i = 0; i < nameList.length; i++) { // loop through random list of names
+          const name = nameList[i]; // For current name
+          for (let j = 0; j < count; j++) { // loop count times
+            let cursor = 0; // cursor to point the current position in randomAssign
+            while (cursor < randomAssign.length) { // prevent infinite loop
+              const testWeekday = randomAssign[cursor]; // current position in randomAssign
+              if (!result[testWeekday].includes(name)) { // If current person is not assigned in the weekday
+                result[testWeekday].push(name); // Assign the person to the weekday
+                randomAssign.splice(cursor, 1); // Remove weekday from randomAssign
+                break;
+              }
+              cursor++; // move cursor forward
+            }
+          }
+        }
+
+        // Result display
+        const tableBody = document.getElementById('result-data');
+        tableBody.innerHTML = `<tr>${result.map((names) => `<td>${names.join('<br>')}</td>`).join('')}</tr>`;
+      }
+    </script>
+  </body>
+</html>
