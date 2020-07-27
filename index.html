@@ -176,7 +176,6 @@
           document.getElementById('error-msg').innerHTML = '설정에 따라 재택 가능한 날짜가 없는 사람이 있습니다.';
           return;
         }
-        console.log(availWeekdayMap);
 
         // Calculate random assignment as uniform as possible
         let result = [[], [], [], [], []];
@@ -196,7 +195,6 @@
             let assignWeekday = null;
             let cursor = 0;
             while (assignWeekday === null) {
-              console.log(cursor);
               if (cursor >= randomAssign.length) {
                 // Cursor gets over the array. Extend random assign
                 randomAssign = randomAssign.concat([...shuffle([...possibleWeekdays])]);
@@ -230,7 +228,6 @@
             }
           }
         }
-        console.log(randomAssign);
 
         // Result display
         const tableBody = document.getElementById('result-data');
