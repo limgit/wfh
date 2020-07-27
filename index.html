@@ -42,6 +42,18 @@
           <label><input type="checkbox" name="weekday" value="fri" checked> 금</label>
         </div>
         <div class="padded">
+          재택 묶기 설정:<br />
+          묶어야 하는 사람을 공백으로 구분해<br />
+          한 줄에 한 그룹씩 작성하세요<br />
+          <textarea id="group-list" rows="5" onchange="onGroupListChange();" style="white-space: pre;" placeholder="이름1 이름2 이름3"></textarea>
+        </div>
+        <div class="padded">
+          재택 기피 요일 설정:<br />
+          이름과 재택 기피 요일을 공백으로 구분해<br />
+          한 줄에 한 사람씩 작성하세요<br />
+          <textarea id="avoid-list" rows="5" onchange="onAvoidListChange();" style="white-space: pre;" placeholder="이름1 월 목"></textarea>
+        </div>
+        <div class="padded">
           <button onclick="onRunClick();">Run!</button>
         </div>
         <div class="padded">
@@ -68,14 +80,26 @@
     </div>
     <script>
       const NAME_LIST_KEY = 'nameList';
+      const GROUP_LIST_KEY = 'groupList';
+      const AVOID_LIST_KEY = 'avoidList';
       const STORAGE = window.localStorage;
 
       function onLoad() {
         document.getElementById('name-list').value = STORAGE.getItem(NAME_LIST_KEY);
+        document.getElementById('group-list').value = STORAGE.getItem(GROUP_LIST_KEY);
+        document.getElementById('avoid-list').value = STORAGE.getItem(AVOID_LIST_KEY);
       }
 
       function onNameListChange() {
         STORAGE.setItem(NAME_LIST_KEY, document.getElementById('name-list').value);
+      }
+
+      function onGroupListChange() {
+        STORAGE.setItem(GROUP_LIST_KEY, document.getElementById('group-list').value);
+      }
+
+      function onAvoidListChange() {
+        STORAGE.setItem(AVOID_LIST_KEY, document.getElementById('avoid-list').value);
       }
 
       // Shuffle array in-place
@@ -87,9 +111,22 @@
         return a;
       }
 
+      const KOR_TO_NUM = {
+        '월': 0,
+        '화': 1,
+        '수': 2,
+        '목': 3,
+        '금': 4,
+      };
+
       function onRunClick() {
         // Read data
         const nameList = document.getElementById('name-list').value.split('\n').filter((item) => item !== "");
+        const groupedNameList = document.getElementById('group-list').value.split('\n').filter((item) => item !== '').map((e) => e.split(' '));
+        const avoidWeekdayMap = document.getElementById('avoid-list').value.split('\n').filter((item) => item !== '').map((e) => e.split(' ')).reduce((acc, curr) => ({
+          ...acc,
+          [curr[0]]: curr.slice(1).map((e) => KOR_TO_NUM[e]),
+        }), {}); // { name: [1, 4]}
         const count = Number(document.getElementById('count').value);
         const weekDaysAvail = Array.from(document.getElementsByName('weekday')).map((e) => e.checked);
         const possibleWeekdays = weekDaysAvail.map((v, idx) => v ? idx : null).filter((i) => i !== null);
@@ -98,32 +135,102 @@
           document.getElementById('error-msg').innerHTML = '가능한 요일 수보다 재택 날짜 수가 많습니다.';
           return;
         }
+        const groupedNameListFlattened = groupedNameList.reduce((acc, curr) => [...acc, ...curr], []);
+        if (groupedNameListFlattened.some((x) => groupedNameListFlattened.indexOf(x) !== groupedNameListFlattened.lastIndexOf(x))) {
+          document.getElementById('error-msg').innerHTML = '한 사람이 두 개 이상의 그룹에 속할 수 없습니다.';
+          return;
+        }
+        if (!groupedNameList.every((e) => e.every((p) => nameList.includes(p)))) {
+          document.getElementById('error-msg').innerHTML = '재택 묶음 설정에 알려지지 않은 이름이 포함되어 있습니다.';
+          return;
+        }
+        if (!Object.keys(avoidWeekdayMap).every((e) => nameList.includes(e))) {
+          document.getElementById('error-msg').innerHTML = '재택 기피 요일 설정에 알려지지 않은 이름이 포함되어 있습니다.';
+          return;
+        }
+        // Find available weekdays for each person / group
+        const availWeekdayMap = {
+          ...groupedNameList.reduce((acc, curr) => ({
+            ...acc,
+            [curr.join(',')]: [...possibleWeekdays],
+          }), {}),
+          ...nameList.filter((e) => !groupedNameListFlattened.includes(e)).reduce((acc, curr) => ({
+            ...acc,
+            [curr]: [...possibleWeekdays],
+          }), {}),
+        };
+        // Apply avoid weekdays
+        Object.keys(avoidWeekdayMap).forEach((name) => {
+          if (name in availWeekdayMap) {
+            // Singular case.
+            const newVal = availWeekdayMap[name].filter((e) => !avoidWeekdayMap[name].includes(e));
+            availWeekdayMap[name] = newVal;
+          } else {
+            // Find the current person's group
+            const groupKey = groupedNameList.find((e) => e.includes(name)).join(',');
+            const newVal = availWeekdayMap[groupKey].filter((e) => !avoidWeekdayMap[name].includes(e));
+            availWeekdayMap[groupKey] = newVal;
+          }
+        });
+        if (Object.values(availWeekdayMap).some((e) => e.length < count)) {
+          document.getElementById('error-msg').innerHTML = '설정에 따라 재택 가능한 날짜가 없는 사람이 있습니다.';
+          return;
+        }
+        console.log(availWeekdayMap);
 
         // Calculate random assignment as uniform as possible
         let result = [[], [], [], [], []];
-        const singleDaySlots = Math.floor((nameList.length * count) / weekDaysAvailCount);
-        const remainder = nameList.length * count - weekDaysAvailCount * singleDaySlots;
-        // Generate list of random weekdays
-        const randomAssign = new Array(singleDaySlots + (remainder > 0 ? 1 : 0)).fill(null).reduce((acc) => {
-          return [...acc, ...shuffle([...possibleWeekdays])];
-        }, []);
+        let randomAssign = [];
 
-        shuffle(nameList);
-        for (let i = 0; i < nameList.length; i++) { // loop through random list of names
-          const name = nameList[i]; // For current name
-          for (let j = 0; j < count; j++) { // loop count times
-            let cursor = 0; // cursor to point the current position in randomAssign
-            while (cursor < randomAssign.length) { // prevent infinite loop
-              const testWeekday = randomAssign[cursor]; // current position in randomAssign
-              if (!result[testWeekday].includes(name)) { // If current person is not assigned in the weekday
-                result[testWeekday].push(name); // Assign the person to the weekday
-                randomAssign.splice(cursor, 1); // Remove weekday from randomAssign
+        const groups = Object.keys(availWeekdayMap).sort((a, b) => {
+          // Less available days comes first
+          if (availWeekdayMap[a].length !== availWeekdayMap[b].length) return availWeekdayMap[a].length - availWeekdayMap[b].length;
+          // If equal, larger group comes first
+          return b.split(',').length - a.split(',').length;
+        });
+
+        for (let i = 0; i < groups.length; i += 1) { // loop through the groups
+          const group = groups[i].split(','); // For current group
+          for (let j = 0; j < count; j += 1) { // loop wfh count times
+            // Find weekday to assign first
+            let assignWeekday = null;
+            let cursor = 0;
+            while (assignWeekday === null) {
+              console.log(cursor);
+              if (cursor >= randomAssign.length) {
+                // Cursor gets over the array. Extend random assign
+                randomAssign = randomAssign.concat([...shuffle([...possibleWeekdays])]);
+              }
+              const testWeekday = randomAssign[cursor];
+              if (!result[testWeekday].includes(group[0]) && availWeekdayMap[group].includes(testWeekday)) {
+                assignWeekday = testWeekday;
                 break;
               }
-              cursor++; // move cursor forward
+              cursor++;
+            }
+            // Now in here, we got weekday to assign this group
+            for (let k = 0; k < group.length; k += 1) { // Loop through each names in group
+              const name = group[k];
+              let done = false;
+              cursor = 0;
+              while (!done) {
+                if (cursor >= randomAssign.length) {
+                  // Cursor gets over the array. Extend random assign
+                  randomAssign = randomAssign.concat([...shuffle([...possibleWeekdays])]);
+                }
+                const thisWeekday = randomAssign[cursor];
+                if (thisWeekday === assignWeekday) {
+                  result[assignWeekday].push(name); // Assign!
+                  randomAssign.splice(cursor, 1);
+                  done = true;
+                  break;
+                }
+                cursor++;
+              }
             }
           }
         }
+        console.log(randomAssign);
 
         // Result display
         const tableBody = document.getElementById('result-data');
